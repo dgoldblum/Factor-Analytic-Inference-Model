@@ -3,7 +3,7 @@ import sklearn
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.svm import LinearSVC
 
-def srModelScore(x, num_latents):
+def srModelScore(x, num_latents, ori_len, cv):
   scale = len(x)//num_latents
   xs = []
   j = 0
@@ -12,10 +12,10 @@ def srModelScore(x, num_latents):
     j = j+scale
 
   x_cls = np.array(xs).T
-  size = len(x)//(4*num_latents)
+  size = len(x)//(ori_len*num_latents)
   y_cls = np.zeros((size))
 
-  for i in range(1, 4):
+  for i in range(1, ori_len):
     y_cls = np.append(y_cls, np.zeros((size))+i)
 
 
@@ -25,14 +25,14 @@ def srModelScore(x, num_latents):
   clf_model.fit(X_train, y_train)
   y_hat = clf_model.predict(X_test)
 
-  scores = cross_val_score(clf_model, x_cls, y_cls, cv=20)
+  scores = cross_val_score(clf_model, x_cls, y_cls, cv=cv)
 
   return scores
 
 def mrModelScore(x, num_latents):
-  size = len(x.T)//4
+  size = len(x.T)//4 ###CHANGE
   y_cls = np.zeros((size))
-  for i in range(1, 4):
+  for i in range(1, 4): ###CHANGE
     y_cls = np.append(y_cls, np.zeros((size))+i)
   scores_list = []
   for i in range(3):

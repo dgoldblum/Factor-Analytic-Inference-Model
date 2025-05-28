@@ -71,31 +71,36 @@ def makeModels_SR(region, gratings, oris, freq, time_bin, pois, plothist, num_la
   return vd_visp.means.detach().numpy()
 
 
-def main():
+def run(stim, num_latents):
     #region = 'VISal'
-    stim = 'static_gratings'
-    oris = [0, 45, 90, 135, 180, 225, 270, 315]
+    if stim == 'drifting_gratings':
+       ori = [0, 45, 90, 135, 180, 225, 270, 315]
+       freq = 1
+    else:
+      ori = [0, 30, 60, 90, 120, 150]
+      freq = 0.02
     time_bin = 100
-    latents = list(range(2, 17)) ### 16 latents
-    gauss_raw = []
-    poiss_raw = []
-    gauss_score = []
-    poiss_score = []
+    latents = list(range(2, num_latents+1)) ### 16 latents
     for region in ['VISp', 'VISrl', 'VISal', 'VISpm', 'VISl']:
+        gauss_raw = []
+        poiss_raw = []
+        gauss_score = []
+        poiss_score = []
         for num in latents:
-            sr_g = makeModels_SR(region, stim, oris, .02, time_bin, False, False, num)
-            sr_p = makeModels_SR(region,stim, oris, .02, time_bin, True, False, num)
+            sr_g = makeModels_SR(region, stim, ori, freq, time_bin, False, False, num)
+            sr_p = makeModels_SR(region, stim, ori, freq, time_bin, True, False, num)
             gauss_raw.append(sr_g)
             poiss_raw.append(sr_p)
-            gauss_score.append(np.mean(srModelScore(sr_g, num)))
-            poiss_score.append(np.mean(srModelScore(sr_p, num)))
-        path = os.path.join('C:/Users/dgold/Documents/Thesis/Thesis_Code/Data/Database/SR_Results/', region, stim)
+
+        path = os.path.join('C:/Users/dgold/Documents/Thesis/Thesis_Code/Data/Database/SAND_Results/', region, stim)
         if os.path.exists(path) == False:
             os.makedirs(path)
-        np.save(path+'/gauss_sr_raw.npy', np.array(gauss_raw, dtype=object))
-        np.save(path+'/poiss_sr_raw.npy', np.array(poiss_raw, dtype=object))
-        np.save(path+'/gauss_sr_score.npy', np.array(gauss_score))
-        np.save(path+'/poiss_sr_score.npy', np.array(poiss_score))
+        np.save(os.path.join(path, f'{num_latents}_gauss_sr_raw.npy'), np.array(gauss_raw, dtype=object))
+        np.save(os.path.join(path, f'{num_latents}_poiss_sr_raw.npy'), np.array(poiss_raw, dtype=object))
+def main():
+    num_latents = 24
+    #run('drifting_gratings', num_latents)
+    run('static_gratings', num_latents)
         
 if __name__ == "__main__":
     main()

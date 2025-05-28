@@ -12,4 +12,7 @@ def getdata(region, stimulus, orientations, frequencies, time_step):  #timestep 
                 freq = freq*100
             file_path = f'{path}/Orientation-{int(ori)}_Frequency-{int(freq)}_Resolution_{int(time_step)}.npy'
             matricies.append(np.load(file_path)[:,:,0:5])
-    return np.stack(matricies, axis = 1)
+    stack = np.stack(matricies, axis = 1)
+    if len(stack) %2 != 0:
+        stack = stack[:-1, :, :, :]
+    return np.reshape(stack, (np.shape(stack)[0], -1))
