@@ -23,6 +23,21 @@ def crossval_model_comparison(region_data, latent_dim, dist, n_folds=5, seed=0):
     n_neurons, n_timepoints = region_data.shape
 
     results = []
+### Neurons should be split later
+### First VLM on 80% time all neurons
+### Split neurons into training and testing
+### ytrain should be all neurons x train time points
+### Get W indicies for training neurons, use those indicies on test neurons 
+### 2nd VI ytest1 should be # train neurons x # time points
+### Get W indicies for test neurons
+### Calculate on test indicies W and 2nd VI learned Z
+    
+    # Split time points (same for all folds and all models)
+    time_idx = np.arange(n_timepoints)
+    np.random.shuffle(time_idx)
+    time_cut = int(0.8 * n_timepoints)
+    time_train_idx = time_idx[:time_cut]
+    time_test_idx = time_idx[time_cut:]
 
     # Create time index permutations per fold with reproducible shuffling
     fold_rngs = [np.random.default_rng(seed=seed + f) for f in range(n_folds)]
