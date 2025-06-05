@@ -6,13 +6,50 @@ from torch.autograd import Variable
 from torch.nn.utils.parametrizations import orthogonal
 import numpy as np
 
+def negbin_logpmf_trim(y, mu, theta):
+    return (
+        theta * torch.log(theta / (theta + mu))
+        + y * torch.log(mu / (theta + mu))
+    )
+
+
+#to determing the best choice of phi (or theta) take a vector of mean firing rates for all neurons, call it mu, then sweep over possible scalar values of theta to maximize the objective below, use that phi for the LVM
+def negbin_logpmf(y, mu, theta):
+    return (
+        torch.lgamma(y + theta) - torch.lgamma(theta) - torch.lgamma(y + 1)
+        + theta * torch.log(theta / (theta + mu))
+        + y * torch.log(mu / (theta + mu))
+    )
+
+def update_loading_new(input_dim, a, b, shared):
+  zerotens = torch.zeros(int(input_dim/2), 1)
+  d1 = torch.cat((a, torch.zeros(a.shape)))
+  #print(a.shape, d1.shape)
+  d3 = torch.cat((torch.zeros(b.shape), b))
+  #print(b.shape, d3.shape)
+  decoder = torch.cat((d1, shared, d3), 1)
+  return decoder
+
+
+# def update_loading(input_dim, decoder):
+#   zerotens = torch.zeros(int(input_dim/2), 1)
+#   split_decoder = torch.tensor_split(decoder, 3, dim=1)
+#   d1 = torch.cat((torch.tensor_split(split_decoder[0], 2, dim=0)[0], zerotens))
+#   d3 = torch.cat((zerotens, torch.tensor_split(split_decoder[2], 2, dim=0)[1]))
+#   decoder = torch.cat((d1, split_decoder[1], d3), 1)
+
+torch.manual_seed(42)
+
 class VLM(torch.nn.Module):
     def __init__(self, input_dim1, latent_dim1, a_dim, b_dim, s_dim, n_zs, region, static_w=None):
         super(VLM, self).__init__()
         halfDim = int(input_dim1/2)
         self.lat1 = latent_dim1
         self.input_dim = input_dim1
-        self.sig_sq = torch.nn.Parameter(torch.randn(self.input_dim))-3 ### if gaussian (can change to diagonal matrix Psi if you want....) if we make this small forces z to better capture the actual spike
+        self.sig_sq = torch.nn.Parameter(torch.zeros(self.input_dim)) ### if gaussian (can change to diagonal matrix Psi if you want....) if we make this small forces z to better capture the actual spike
+        ### Look for different sig_sq
+        ### Init at either EM solution for Psi or at 0
+
         # self.decoder = torch.nn.Parameter(torch.randn(self.input_dim, self.lat1))
         self.n_zs = n_zs
         #add if statememt that makes the params just an empty tensor if the correspodn
@@ -59,25 +96,24 @@ class VLM(torch.nn.Module):
             if decoder is None:
                 raise RuntimeError("Fixed decoder not set but learn_w=False")
       else:
-          decoder = self.update_loading_new(self.input_dim, self.params_A, self.params_B, self.params_S)
-      
+          decoder = update_loading_new(self.input_dim, self.params_A, self.params_B, self.params_S)
+
       # Now decoder shape should match expected [input_dim x latent_dim]
       if decoder.shape[1] != z.shape[1]:
           raise RuntimeError(f"Decoder shape {decoder.shape} incompatible with z shape {z.shape}")
-      
+
+      theta_vals = {'VISp': np.float64(1.685585585585586),
+                    'VISrl': np.float64(1.556756756756757),
+                    'VISal': np.float64(2.0324324324324325),
+                    'VISpm': np.float64(1.7846846846846849),
+                    'VISl': np.float64(0.9522522522522523)}
 
       if dist == 'negbin':
-        theta_vals = {'VISp': np.float64(1.7000000000000002),
-            'VISrl': np.float64(1.6),
-            'VISpm': np.float64(1.8000000000000003),
-            'VISal': np.float64(2.0),
-            'VISl': np.float64(0.9)}
         ##### IF INCLUDING OFFSET######
-        lambdas= torch.matmul(decoder, z.T).T+torch.log(torch.mean(y,axis = 0, dtype = float)+.00000001)#[None,:]
+        lambdas= torch.exp(torch.matmul(decoder, z.T).T)+torch.mean(y,axis = 0, dtype = float)#[None,:]
         ###############################
         theta = torch.tensor([theta_vals[region]])
-        loss = torch.sum(self.negbin_logpmf(y,lambdas, theta))
-        log_likelihood = -loss(lambdas, y)
+        log_likelihood = torch.sum(negbin_logpmf_trim(y, lambdas, theta))
       #print(np.shape(torch.matmul(self.decoder, z.T).T[0]))
 
       elif dist == 'pois':
@@ -101,23 +137,7 @@ class VLM(torch.nn.Module):
       # print(log_likelihood + log_prior_z, (log_likelihood + log_prior_z).shape)
       return log_likelihood + log_prior_z # + n_samps*torch.sum(log_prior_w_full) ###should ultimately be a vector of size of number of samples to approximate the integral (which is usually 1 or maybe 2-5 ? )
 
-    def update_loading_new(self, input_dim, a, b, shared):
-        zerotens = torch.zeros(int(input_dim/2), 1)
-        d1 = torch.cat((a, torch.zeros(a.shape)))
-        #print(a.shape, d1.shape)
-        d3 = torch.cat((torch.zeros(b.shape), b))
-        #print(b.shape, d3.shape)
-        decoder = torch.cat((d1, shared, d3), 1)
-        return decoder
-    
-    def negbin_logpmf(y, mu, theta):
-      return (
-          torch.lgamma(y + theta) - torch.lgamma(theta) - torch.lgamma(y + 1)
-          + theta * torch.log(theta / (theta + mu))
-          + mu * torch.log(mu / (theta + mu))
-      )
 
-   
 # Define the variational distribution
 class VariationalDistribution(torch.nn.Module):
     def __init__(self, tot_latent_dim, model):
@@ -126,7 +146,10 @@ class VariationalDistribution(torch.nn.Module):
         # Mean and standard deviation of the latent variables
         self.means = torch.nn.Parameter(torch.zeros(tot_latent_dim*model.n_zs)) ###variational parameter for each sample (each time point)
         self.log_std = -torch.nn.Parameter(1*torch.ones(tot_latent_dim*model.n_zs))
-
+        # print("Creating variational distribution with:")
+        # print("  latent_dim =", tot_latent_dim)
+        # print("  n_zs =", model.n_zs)
+        # print("  total params =", tot_latent_dim * model.n_zs)
     def entropy(self):
       return torch.sum(self.log_std)
 
@@ -137,9 +160,9 @@ class VariationalDistribution(torch.nn.Module):
         epsilon = torch.randn(num_samps, self.means.size()[0])
         z = self.means + torch.exp(self.log_std) * epsilon
         return z
-    
 
-def black_box_variational_inference(model, variational_distribution,y, optimizer, dist, learn_w = True):
+# Define the black box variational inference algorithm
+def black_box_variational_inference(model, variational_distribution, y, optimizer, dist, region, learn_w = True):
     n_int_approx_samps= 1 #number of samples to approximate the integral (keep at 1 for now)
     samps = variational_distribution(n_int_approx_samps, model)
 
@@ -147,7 +170,7 @@ def black_box_variational_inference(model, variational_distribution,y, optimizer
 
     #print('vd: ', np.shape(samps))
     # Calculate the ELBO
-    elbo = -((torch.mean(model.log_joint(samps,y, dist, learn_w), axis = 0)) + variational_distribution.entropy())  #
+    elbo = -((torch.mean(model.log_joint(samps,y, dist, region, learn_w), axis = 0)) + variational_distribution.entropy())  #
     # Optimize the parameters
     optimizer.zero_grad()
     elbo.backward()
