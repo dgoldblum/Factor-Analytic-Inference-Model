@@ -11,6 +11,7 @@ import VI_Model as VI
 from VI_Model import black_box_variational_inference as bbvi
 from sklearn.model_selection import KFold
 import matplotlib.pyplot as plt
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 
 
@@ -134,22 +135,66 @@ def run_crossval_model_sd(region_data, num_latents_list, dist, region, n_folds=5
         all_results[k] = lls
     return all_results
 
+# def main():
+#     stim = 'drifting_gratings'
+#     orientations = [0, 45, 90, 135, 180, 225, 270, 315]
+#     frequencies = [1]
+#     timebin = 100
+
+    
+#     for region in ['VISp','VISrl', 'VISal', 'VISpm', 'VISl']:
+#         region_data = getdata(region, stim, orientations, frequencies, timebin)
+#         results = run_crossval_model_sd(region_data, num_latents_list=list(range(1, 9)), dist='Pois', region=region, n_folds=5)
+#         # all_res[region] = results
+#         # Print average performance
+#         path = os.path.join('C:/Users/dgold/Documents/Thesis/Thesis_Code/Data/Database/', 'Cross_Val_Results', 'Pois')
+#         
+#         # os.makedirs(path, exist_ok=True)
+#         np.save(os.path.join(path, f'{region}_{stim}_{timebin}.npy'), np.array(results, dtype=object))
+
+
+def process_region(region, stim, orientations, frequencies, timebin, dist, num_latents_list, n_folds):
+    region_data = getdata(region, stim, orientations, frequencies, timebin)
+    results = run_crossval_model_sd(region_data, num_latents_list=num_latents_list, dist=dist, region=region, n_folds=n_folds)
+    suffix = {'gauss': 'Gauss', 'pois': 'Pois', 'negbin': 'NegBin'}
+    save_path = os.path.join('C:/Users/dgold/Documents/Thesis/Thesis_Code/Data/Database/', 'Cross_Val_Results', suffix)
+    os.makedirs(save_path, exist_ok=True)
+    np.save(os.path.join(save_path, f'{region}_{stim}_{timebin}.npy'), np.array(results, dtype=object))
+    
+    return (region, results)
+
 def main():
     stim = 'drifting_gratings'
     orientations = [0, 45, 90, 135, 180, 225, 270, 315]
     frequencies = [1]
     timebin = 100
+    dist = 'gauss'
+    num_latents_list = list(range(1, 9))
+    n_folds = 5
 
-    
-    for region in ['VISp','VISrl', 'VISal', 'VISpm', 'VISl']:
-        region_data = getdata(region, stim, orientations, frequencies, timebin)
-        results = run_crossval_model_sd(region_data, num_latents_list=list(range(1, 9)), dist='Pois', region=region, n_folds=5)
-        # all_res[region] = results
-        # Print average performance
-        path = os.path.join('C:/Users/dgold/Documents/Thesis/Thesis_Code/Data/Database/', 'Cross_Val_Results', 'Pois')
-        # if os.path.exists(path) == False:
-        #     os.makedirs(path)
-        np.save(os.path.join(path, f'{region}_{stim}_{timebin}.npy'), np.array(results, dtype=object))
+    regions = ['VISp', 'VISrl', 'VISal', 'VISpm', 'VISl']
+
+    futures = []
+    with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
+        for region in regions:
+            futures.append(
+                executor.submit(
+                    process_region,
+                    region,
+                    stim,
+                    orientations,
+                    frequencies,
+                    timebin,
+                    dist,
+                    num_latents_list,
+                    n_folds
+                )
+            )
+
+        for future in as_completed(futures):
+            region, results = future.result()
+            print(f"Completed region: {region} — Avg LLs: {[np.mean(r) for r in results.values()]}")
+
 
 if __name__ == "__main__":
     main()
