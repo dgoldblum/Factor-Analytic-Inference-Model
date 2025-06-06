@@ -154,10 +154,14 @@ def run_crossval_model_sd(region_data, num_latents_list, dist, region, n_folds=5
 
 
 def process_region(region, stim, orientations, frequencies, timebin, dist, num_latents_list, n_folds):
+    total_threads = os.cpu_count()
+    processes = total_threads  # Matches max_workers in ProcessPoolExecutor
+    threads_per_worker = max(1, total_threads // processes)
+    torch.set_num_threads(threads_per_worker)
     region_data = getdata(region, stim, orientations, frequencies, timebin)
     results = run_crossval_model_sd(region_data, num_latents_list=num_latents_list, dist=dist, region=region, n_folds=n_folds)
     suffix = {'gauss': 'Gauss', 'pois': 'Pois', 'negbin': 'NegBin'}
-    save_path = os.path.join('C:/Users/dgold/Documents/Thesis/Thesis_Code/Data/Database/', 'Cross_Val_Results', suffix)
+    save_path = os.path.join('C:/Users/dgold/Documents/Thesis/Thesis_Code/Data/Database/', 'Cross_Val_Results', suffix[dist])
     os.makedirs(save_path, exist_ok=True)
     np.save(os.path.join(save_path, f'{region}_{stim}_{timebin}.npy'), np.array(results, dtype=object))
     

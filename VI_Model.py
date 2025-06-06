@@ -44,7 +44,10 @@ class VLM(torch.nn.Module):
     def __init__(self, input_dim1, latent_dim1, a_dim, b_dim, s_dim, n_zs, region, static_w=None):
         super(VLM, self).__init__()
         halfDim = int(input_dim1/2)
-        self.lat1 = latent_dim1
+        if latent_dim1 is None:
+            self.lat1 = a_dim + s_dim + b_dim
+        else:
+            self.lat1 = latent_dim1
         self.input_dim = input_dim1
         self.sig_sq = torch.nn.Parameter(torch.zeros(self.input_dim)) ### if gaussian (can change to diagonal matrix Psi if you want....) if we make this small forces z to better capture the actual spike
         ### Look for different sig_sq
@@ -177,3 +180,16 @@ def black_box_variational_inference(model, variational_distribution, y, optimize
     optimizer.step()
 
     return elbo.item()
+
+def train_with_early_stopping(model, vd, y, optimizer, dist, region, learn_w, max_epochs, tol=1e-4, patience=50):
+    best_loss = float('inf')
+    epochs_no_improve = 0
+    for epoch in range(max_epochs):
+        loss = black_box_variational_inference(model, vd, y, optimizer, dist, region, learn_w)
+        if loss < best_loss - tol:
+            best_loss = loss
+            epochs_no_improve = 0
+        else:
+            epochs_no_improve += 1
+        if epochs_no_improve >= patience:
+            break
